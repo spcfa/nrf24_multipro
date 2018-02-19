@@ -52,6 +52,19 @@ static const struct {
 mjx_tx_rf_map[] = {{{0xF8, 0x4F, 0x1C}, {0x0A, 0x46, 0x3A, 0x42}},
                   {{0xC8, 0x6E, 0x02}, {0x0A, 0x3C, 0x36, 0x3F}},
                   {{0x48, 0x6A, 0x40}, {0x0A, 0x43, 0x36, 0x3F}}};
+                      
+static const struct {
+    u8 e010_txid[2];
+    u8 rfchan[MJX_RF_NUM_CHANNELS];
+}
+e010_tx_rf_map[] = {{{0x4F, 0x1C}, {0x3A, 0x35, 0x4A, 0x45}},
+                   {{0x90, 0x1C}, {0x2E, 0x36, 0x3E, 0x46}}, 
+                   {{0x24, 0x36}, {0x32, 0x3E, 0x42, 0x4E}},
+                   {{0x7A, 0x40}, {0x2E, 0x3C, 0x3E, 0x4C}},
+                   {{0x61, 0x31}, {0x2F, 0x3B, 0x3F, 0x4B}},
+                   {{0x5D, 0x37}, {0x33, 0x3B, 0x43, 0x4B}},
+                   {{0xFD, 0x4F}, {0x33, 0x3B, 0x43, 0x4B}}, 
+                   {{0x86, 0x3C}, {0x34, 0x3E, 0x44, 0x4E}}};
 
 u8 mjx_checksum()
 {
@@ -98,9 +111,10 @@ void mjx_send_packet(u8 bind)
     packet[1] = mjx_convert_channel(RUDDER);          // rudder
     packet[4] = 0x40;         // rudder does not work well with dyntrim
     packet[2] = mjx_convert_channel(ELEVATOR);   // elevator
-    packet[5] = CHAN2TRIM(packet[2]); // 0x40;      // trim elevator
+    // driven trims cause issues when headless is enabled
+    packet[5] = GET_FLAG(MJX_CHANNEL_HEADLESS, 1) ? 0x40 : CHAN2TRIM(packet[2]); // trim elevator
     packet[3] = mjx_convert_channel(AILERON);          // aileron
-    packet[6] = CHAN2TRIM(packet[3]); // 0x40;      // trim aileron
+    packet[6] = GET_FLAG(MJX_CHANNEL_HEADLESS, 1) ? 0x40 : CHAN2TRIM(packet[3]); // trim aileron
     packet[7] = mjx_txid[0];
     packet[8] = mjx_txid[1];
     packet[9] = mjx_txid[2];
@@ -129,10 +143,6 @@ void mjx_send_packet(u8 bind)
         break;
 
         case FORMAT_X600:
-            if (GET_FLAG(MJX_CHANNEL_HEADLESS, 1)) { // driven trims cause issues when headless is enabled
-                packet[5] = 0x40;
-                packet[6] = 0x40;
-            }
             packet[10] = GET_FLAG_INV(MJX_CHANNEL_LED, 0x02);
             packet[11] = GET_FLAG(MJX_CHANNEL_RTH, 0x01);
             if (!bind) {
@@ -186,10 +196,8 @@ uint32_t process_MJX()
 
 void initialize_mjx_txid()
 {
-    // todo: check if e010 can work with semi arbitrary txid like WLH08
-    if( mjx_format == FORMAT_E010) {
-        mjx_txid[0] = 0x90;
-        mjx_txid[1] = 0x1c;
+    if (mjx_format == FORMAT_E010) {
+        memcpy(mjx_txid, e010_tx_rf_map[transmitterID[0] % (sizeof(e010_tx_rf_map)/sizeof(e010_tx_rf_map[0]))].e010_txid, 2);
         mjx_txid[2] = 0x00;
     }
     else if (mjx_format == FORMAT_WLH08) {
@@ -252,9 +260,12 @@ void MJX_init()
 
 void mjx_init2()
 {
-    if (mjx_format == FORMAT_H26D) {
+    if (mjx_format == FORMAT_E010) {
+        memcpy(mjx_rf_channels, e010_tx_rf_map[transmitterID[0] % (sizeof(e010_tx_rf_map)/sizeof(e010_tx_rf_map[0]))].rfchan, sizeof(mjx_rf_channels));
+    }
+    else if (mjx_format == FORMAT_H26D) {
         memcpy(mjx_rf_channels, "\x32\x3e\x42\x4e", sizeof(mjx_rf_channels));
-    } else if (mjx_format != FORMAT_WLH08 && mjx_format != FORMAT_E010) {
+    } else if (mjx_format != FORMAT_WLH08) {
         memcpy(mjx_rf_channels, mjx_tx_rf_map[transmitterID[0] % (sizeof(mjx_tx_rf_map)/sizeof(mjx_tx_rf_map[0]))].rfchan, sizeof(mjx_rf_channels));
     }
 }
